@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require "parametric/context"
 require "parametric/results"
 require "parametric/field"
@@ -7,6 +5,7 @@ require "parametric/field"
 module Parametric
   class Schema
     def initialize(options = {}, &block)
+      super
       @options = options
       @fields = {}
       @definitions = []
@@ -49,7 +48,10 @@ module Parametric
     end
 
     def merge(other_schema = nil, &block)
-      raise ArgumentError, '#merge takes either a schema instance or a block' if other_schema.nil? && !block_given?
+      if other_schema.nil? && !block
+        raise ArgumentError,
+              '#merge takes either a schema instance or a block'
+      end
 
       if other_schema
         instance = self.class.new(options.merge(other_schema.options))
@@ -75,9 +77,7 @@ module Parametric
       fields.each_with_object({}) do |(_, field), obj|
         meta = field.meta_data.dup
         sc = meta.delete(:schema)
-        meta[:structure] = sc.schema.structure if sc
-        one_of = meta.delete(:one_of)
-        meta[:one_of] = one_of.values.map(&:structure) if one_of
+        meta[:structure] = sc.structure if sc
         obj[field.key] = meta
       end
     end
@@ -97,14 +97,22 @@ module Parametric
     end
 
     def before_resolve(klass = nil, &block)
-      raise ArgumentError, '#before_resolve expects a callable object, or a block' if !klass && !block_given?
+      if !klass && !block
+        raise ArgumentError,
+              '#before_resolve expects a callable object, or a block'
+      end
+
       callable = klass || block
       before_hooks << callable
       self
     end
 
     def after_resolve(klass = nil, &block)
-      raise ArgumentError, '#after_resolve expects a callable object, or a block' if !klass && !block_given?
+      if !klass && !block
+        raise ArgumentError,
+              '#after_resolve expects a callable object, or a block'
+      end
+
       callable = klass || block
       after_hooks << callable
       self
@@ -157,8 +165,6 @@ module Parametric
       end
     end
 
-    protected
-
     attr_reader :definitions, :options, :before_hooks, :after_hooks
 
     private
@@ -170,9 +176,7 @@ module Parametric
 
       out = flds.each_with_object({}) do |(_, field), m|
         r = field.resolve(val, context.sub(field.key))
-        if r.eligible?
-          m[field.key] = r.value
-        end
+        m[field.key] = r.value if r.eligible?
       end
 
       run_after_hooks(out, context)

@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 module Parametric
   # Field DSL
   # host instance must implement:

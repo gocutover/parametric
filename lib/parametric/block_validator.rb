@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 module Parametric
   class BlockValidator
     def self.build(meth, &block)

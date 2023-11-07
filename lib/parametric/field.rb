@@ -1,19 +1,13 @@
-# frozen_string_literal: true
-
-require 'delegate'
-require 'parametric/field_dsl'
-require 'parametric/policy_adapter'
-require 'parametric/tagged_one_of'
+require "parametric/field_dsl"
 
 module Parametric
   class ConfigurationError < StandardError; end
 
   class Field
-    include FieldDSL
-
     attr_reader :key, :meta_data
-    Result = Struct.new(:eligible?, :value)
 
+    Result = Struct.new(:eligible?, :value)
+    
     def initialize(key, registry = Parametric.registry)
       @key = key
       @policies = []
@@ -42,32 +36,15 @@ module Parametric
     end
     alias_method :type, :policy
 
-    def tagged_one_of(instance = nil, &block)
-      policy(instance || Parametric::TaggedOneOf.new(&block))
-    end
-
     def schema(sc = nil, &block)
       sc = (sc ? sc : Schema.new(&block))
       meta schema: sc
       policy sc.schema
     end
 
-    def from(another_field)
-      meta another_field.meta_data
-      another_field.policies.each do |plc|
-        policies << plc
-      end
-
-      self
-    end
-
-    def has_policy?(key)
-      policies.any? { |pol| pol.key == key }
-    end
-
     def visit(meta_key = nil, &visitor)
       if sc = meta_data[:schema]
-        r = sc.schema.visit(meta_key, &visitor)
+        r = sc.visit(meta_key, &visitor)
         (meta_data[:type] == :array) ? [r] : r
       else
         meta_key ? meta_data[meta_key] : yield(self)
@@ -78,32 +55,26 @@ module Parametric
       eligible = payload.key?(key)
       value = payload[key] # might be nil
 
-      if !eligible && has_default?
+      if !eligible && default?
         eligible = true
         value = default_block.call(key, payload, context)
         return Result.new(eligible, value)
       end
 
       policies.each do |policy|
-        begin
-          pol = policy.build(key, value, payload:, context:)
-          if !pol.eligible?
-            eligible = false
-            if has_default?
-              eligible = true
-              value = default_block.call(key, payload, context)
-            end
-            break
-          else
-            value = pol.value
-            if !pol.valid?
-              eligible = true # eligible, but has errors
-              context.add_error pol.message
-              break # only one error at a time
-            end
+        if policy.eligible?(value, key, payload)
+          value = resolve_one(policy, value, context)
+          unless policy.valid?(value, key, payload)
+            eligible = true # eligible, but has errors
+            context.add_error policy.message
+            break # only one error at a time
           end
-        rescue StandardError => e
-          context.add_error e.message
+        else
+          eligible = false
+          if default?
+            eligible = true
+            value = default_block.call(key, payload, context)
+          end
           break
         end
       end
@@ -111,15 +82,17 @@ module Parametric
       Result.new(eligible, value)
     end
 
-    protected
-
-    attr_reader :policies
-
     private
+    attr_reader :policies, :registry, :default_block
 
-    attr_reader :registry, :default_block
+    def resolve_one(policy, value, context)
+      policy.coerce(value, key, context)
+    rescue StandardError => e
+      context.add_error e.message
+      value
+    end
 
-    def has_default?
+    def default?
       !!default_block && !meta_data[:skip_default]
     end
 
@@ -128,20 +101,7 @@ module Parametric
 
       raise ConfigurationError, "No policies defined for #{key.inspect}" unless obj
 
-      obj = obj.new(*args) if obj.respond_to?(:new)
-      obj = PolicyWithKey.new(obj, key)
-      obj = PolicyAdapter.new(obj) unless obj.respond_to?(:build)
-
-      obj
-    end
-
-    class PolicyWithKey < SimpleDelegator
-      attr_reader :key
-
-      def initialize(policy, key)
-        super policy
-        @key = key
-      end
+      obj.respond_to?(:new) ? obj.new(*args) : obj
     end
   end
 end

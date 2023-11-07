@@ -1,35 +1,28 @@
-# frozen_string_literal: true
-
 module Parametric
   class Top
     attr_reader :errors
 
     def initialize
+      super
       @errors = {}
     end
 
     def add_error(key, msg)
-      errors[key] ||= []
-      errors[key] << msg
+      errors[key] = [msg]
     end
   end
 
   class Context
     def initialize(path = nil, top = Top.new)
+      super
       @top = top
       @path = Array(path).compact
     end
 
-    def errors
-      top.errors
-    end
+    delegate :errors, to: :top
 
     def add_error(msg)
       top.add_error(string_path, msg)
-    end
-
-    def add_base_error(key, msg)
-      top.add_error(key, msg)
     end
 
     def sub(key)
@@ -42,7 +35,6 @@ module Parametric
     def string_path
       path.reduce(['$']) do |m, segment|
         m << (segment.is_a?(Integer) ? "[#{segment}]" : ".#{segment}")
-        m
       end.join
     end
   end
